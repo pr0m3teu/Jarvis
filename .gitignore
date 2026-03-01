@@ -1,1 +1,4 @@
 .env
+/RAG
+test.txt
+.mypy_cache/
