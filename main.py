@@ -1,5 +1,7 @@
 import openai
 import os
+import sqlite3
+import uuid
 from dotenv import load_dotenv
 from datetime import datetime
 
@@ -15,10 +17,11 @@ def index_file(file_name: str) -> list[dict]:
                 break
 
             chunks.append({
+                "id": str(uuid.uuid4()),
                 "file": file_name,
                 "content": text,
                 "size" : len(text),
-                "date": datetime.now()
+                "date": str(datetime.now())
             })
 
     return chunks
@@ -40,23 +43,35 @@ def index_folder(folder_name: str) -> list[dict]:
     return indexed_chunks
 
 
+def save_embeddings_to_db(con: sqlite3.Connection, client, chunks: list[dict]) -> None:
+    cursor = con.cursor()
+    cursor.execute("CREATE TABLE IF NOT EXISTS chunks(id TEXT PRIMARY KEY, file TEXT NOT NULL, content TEXT NOT NULL, embedding BLOB, size INT, date DATETIME)")
+
+    for chunk in chunks:
+        try:
+            response = client.embeddings.create(
+                model="text-embedding-3-small",
+                input=chunk["content"]
+            )
+            chunk["embedding"] = response.data[0].embedding
+
+            chunk_fields = (chunk["id"], chunk["file"], chunk["content"], chunk["embedding"], chunk["size"], chunk["date"])
+            cursor.execute("INSERT INTO chunks (id, file, content, embedding, size, date) VALUES (?, ?, ?, ?, ?, ?)", chunk_fields)
+
+        except Exception as e:
+            print(e)
+
 
 def main():
-
     client = openai.OpenAI(api_key=OPENAI_KEY)
 
-#    response = client.responses.create(
-#        model="gpt-5-nano",
-#        reasoning={"effort": "low"},
-#        input="What should I build with this OpenAI key I'm using right now?",
-#    )
-
-    chunks = index_file("test.txt")
-    for chunk in chunks:
-        print(chunk)
-
     indexed_chunks = index_folder("../../train-data/")
-    print(indexed_chunks)
+
+    con = sqlite3.connect("memory.db")
+    save_to_db(con, indexed_chunks)
+
+    con.commit()
+    con.close()
 
 
 if __name__ == "__main__":
